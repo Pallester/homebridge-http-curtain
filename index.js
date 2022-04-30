@@ -169,41 +169,37 @@ HttpCurtain.prototype = {
         this.homebridgeService.setCharacteristic(characteristic, value);
     },
 
-    getCurrentPosition: function (callback) {
-        http.httpRequest(this.getCurrentPosUrl, (error, response, body) => {
-            if (this.pullTimer)
-                this.pullTimer.resetTimer();
-
-            if (error) {
-                this.log.error("getCurrentPosition() failed: %s", error.message);
-                callback(error);
-            }
-            else if (response.statusCode !== 200) {
-                this.log.error("getCurrentPosition() returned http error: %s", response.statusCode);
-                callback(new Error("Got http error code " + response.statusCode));
-            }
-            else {
-                if(this.getCurrentPosRegEx) {
-                    let matches = body.match(this.getCurrentPosRegEx);
-                    if(matches && matches.length > 1) {
-                        body = matches[1];
-                        this.log.debug("Retrieving current position via regular expression. Full ungrouped match: %s", matches[0]);
-                    }
-                    else {
-                        this.log.warn("Your CurrentPosRegEx regular expression: \"%s\" did not match any part of the returned body: \"%s\"", this.getCurrentPosRegEx, body);
-                    }
-                }
-                let posValue = parseInt(body);
-                this.log.info("Current position (retrieved via http): %s\%", posValue);
-
-                if (this.invertPosition) {
-                    posValue = 100 - posValue;
-                }
-
-                callback(null, posValue);
-            }
-        });
-    },
+	getCurrentPosition: function(callback) {
+		var ops = {
+         		uri:    this.urlGetCurrentPosition,
+         		method: "GET",
+         		timeout: this.timeout
+      		};
+		//GetCode here
+		request(ops, (error, response, body) => {
+			var value = null;
+         		if (error) {
+            			this.log('HTTP bad response (' + ops.uri + '): ' + error.message);
+         		} else {
+            			try {
+               				value = JSON.parse(body).position;
+               				if (value < this.minOpen || value > this.maxOpen || isNaN(value)) {
+						throw "Invalid value received";
+               				}
+               				this.log('HTTP successful response: ' + body);
+					this.currentPosition = value;
+					this.service.setCharacteristic(Characteristic.CurrentPosition, this.currentPosition);
+					this.service.setCharacteristic(Characteristic.PositionState, Characteristic.PositionState.STOPPED);
+					
+            			} catch (parseErr) {
+               				this.log('Error processing received information: ' + parseErr.message);
+               				error = parseErr;
+					
+            			}
+         		}
+			callback(error, this.currentPosition);
+		});	
+	},
 
     // Seems like HomeKit doesn't care about the state, but rather compares target and current pos.
     getPositionState: function (callback) {
